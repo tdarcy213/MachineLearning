@@ -1,0 +1,91 @@
+---
+title: "Practical Machine Learning - Course Project"
+output: html_document
+---
+
+####EXECUTIVE SUMMARY
+As described on the website for The Qualitative Activity Recognition of Weight Lifting Exercises project (http://groupware.les.inf.puc-rio.br/har), whereas people regularly quantify how much of a particular activity they do, they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, who were instructed to perform barbell lifts "correctly" and "incorrectly" (in 5 different ways), and build a CART model to accurately predict a measure of the quality of performance of this weightlifting activity.
+
+####DATA EXPLORATION
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+We load and explore the data, and the R packages for our exercise:
+```{r}
+library(caret)
+library(randomForest)
+cpTrain<-data.frame(read.csv("pml-training.csv"))
+View(cpTrain[1:10,])
+cpTest<-data.frame(read.csv("pml-testing.csv"))
+View(cpTest)
+str(cpTrain)
+```
+A quick glance indicates that there may be quality issues with our test set.  Let's get a better handle on this:
+```{r}
+cpGood<-complete.cases(cpTrain)
+str(cpTrain[cpGood,])
+str(cpTrain[-cpGood,])
+```
+####DATA PREPARATION
+Only 406 of the 19,622 observations within the Training data set are "complete".  There is a need for some pre-processing.
+
+I observe that the first six columns are subjective elements that are likely to add unnecessary "noise" to the analysis. These elements are:
+
+"X"                        
+"user_name"               
+"raw_timestamp_part_1"     
+"raw_timestamp_part_2"    
+"cvtd_timestamp"           
+"new_window" 
+
+Let's eliminate them from our data sets:
+```{r}
+cpTrain<-cpTrain[,-c(1:6)]
+cpTest<-cpTest[,-c(1:6)]
+```
+
+I will use the "nearZeroVar" function from the CARET package, to identify predictors that vary little, and which will therefore add little value to the prediction.  I do this for both the "training" and the "test" data sets:
+
+```{r}
+nzv <- nearZeroVar(cpTrain, saveMetrics = TRUE)
+nzv2 <- nearZeroVar(cpTest, saveMetrics = TRUE)
+summary(nzv$nzv)
+summary(nzv2$nzv)
+```
+The summary of the nearZeroVar diagnosis indicates that the "test" data set has nearly double the amount of "irrelevant" data elements.  I'm going to use the NZV output from the test set as an index to identify the variables from the training set to use in the model:
+```{r}
+nzTrain<-cpTrain[,nzv2$nzv==FALSE]
+str(nzTrain)
+```
+####PREDICTION
+Now, I create the train and test partitions for the model fit:
+```{r}
+inTrain <- createDataPartition(nzTrain$classe, p = 0.75, list = FALSE)
+trainDat<-nzTrain[inTrain,]
+testDat<-nzTrain[-inTrain,]
+```
+I am opting to employ the randomForest package for the model fit.  As described on the randomForest website (https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm), "In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the run, as follows:
+
+Each tree is constructed using a different bootstrap sample from the original data. About one-third of the cases are left out of the bootstrap sample and not used in the construction of the kth tree.
+
+Put each case left out in the construction of the kth tree down the kth tree to get a classification. In this way, a test set classification is obtained for each case in about one-third of the trees. At the end of the run, take j to be the class that got most of the votes every time case n was oob. The proportion of times that j is not equal to the true class of n averaged over all cases is the oob error estimate. This has proven to be unbiased in many tests."
+```{r}
+rf1<-randomForest(classe~.,data=trainDat)
+rf1
+```
+Our randomForest fit provides an excellent OOB estimate of error rate of 0.25%
+
+Next, we run a prediction, using the test partition.  We validate the results, using the confusionMatrix function:
+```{r}
+pred1<-predict(rf1,newdata=testDat)
+confusionMatrix(pred1,testDat$classe)
+```
+
+####CONCLUSION
+Our model achieved a 0.9969 Accuracy rate, within a 95% Confidence Interval and a low P-Value.  Finally, I ran a prediction against the "test" data set, and arrived at the following values:
+```{r}
+predict(rf1,newdata=cpTest)
+```
